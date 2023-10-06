@@ -1,0 +1,349 @@
+import tkinter as tk
+import mysql.connector
+from tkinter import *
+from tkinter import messagebox
+from tkinter import ttk
+
+import random
+import string
+
+import datetime
+
+mydb = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  password="panino",
+  database="esercitazione"
+)
+
+mycursor = mydb.cursor()
+
+master = tk.Tk()
+
+width = 600
+height = 300
+
+screen_width = master.winfo_screenwidth()
+screen_height = master.winfo_screenheight()
+
+x = (screen_width / 2) - (width / 2)
+y = (screen_height / 2) - (height / 2)
+
+master.geometry('%dx%d+%d+%d' % (width, height, x, y))
+master.configure(background="#008F8C" )
+
+
+brands= ["Samasung", "Apple", "Xiami"]
+Price= ["600€"," 800€"," 1200€"]
+
+#usiamo questa funzione per connetterci al database o registrarci#
+def login(Nickname, password):
+    Username = Nickname.get()
+    Password = password.get()
+
+    # Esegui una query nel database per verificare l'autenticazione
+    query = "SELECT * FROM name WHERE username = %s AND password = %s"
+    mycursor.execute(query, (Username, Password))
+    result = mycursor.fetchone()
+
+    if result:
+        # Autenticazione riuscita,
+        messagebox.showinfo("Login", "Benvenuto!")
+        new_window = tk.Toplevel(master)
+        new_window.title("Gestione")
+        new_window.geometry("300x500")
+        new_window.configure(background="#008F8C")
+        btn2=Button(new_window, text="Gestione Prodotti",command=gestione_prodotti, font=("Helvetica", 12))
+        btn2.grid(padx=90, pady=10)
+        btn_order=Button(new_window, text="Ordini", font=("Helvetica", 12))
+    else:
+        messagebox.showinfo("Errore", "Password o utente inesistente")
+        sql = "INSERT INTO name (Username, Password) VALUES (%s, %s)"
+        val = (Username, Password)
+        mycursor.execute(sql, val)
+        mydb.commit()
+
+        #Creiamo la finestra per far Registrare i clienti
+
+def register(username,passw):
+    username = username.get()
+    passw = passw.get()
+
+#controlliamo se il Nickname è disponibile se si si completa la registrazione e si viene riportati alla pagina del negozio, se no si viene avvisati del problema
+
+    query = "SELECT * FROM users WHERE Nickname =%s"
+    mycursor.execute(query,(username,))
+    result = mycursor.fetchone()
+
+    if result :
+     messagebox.showinfo("Errore","Nickname gia utilizzato")
+     return
+
+    else:
+        sql = "INSERT INTO users (Nickname,Password) VALUES (%s, %s)"
+        val = (username,passw)
+        mycursor.execute(sql,val)
+        mydb.commit()
+
+        messagebox.showinfo("Benvenuto","La registrazione è andata a buon fine")
+
+        shop = tk.Toplevel(master)
+        shop.title("Negozio")
+        shop.geometry("600x600")
+        shop.configure(background="#008F8C")
+
+def ordina(prodotto, quantità):
+
+    col_nome = 0
+    col_codice = 1
+    col_quantità = 2
+    col_prezzo = 3
+
+    # verifica numero prodotti disponibili
+    if int(prodotto[col_quantità]) < int(quantità):
+        messagebox.showerror("Errore","Quantità insufficiente. Disponibili: " + str(prodotto[col_quantità]))
+    else:
+        new_value = prodotto[col_quantità] - int(quantità)
+        sql_update= "UPDATE prodotti SET quantità=%s WHERE codice=%s"
+        val_update=(new_value, prodotto[col_codice])
+
+    # cambio numero prodotti in magazzino
+    try:
+        mycursor.execute(sql_update,val_update)
+        mydb.commit()
+
+        # creazione ordine
+        codice_spedizione = generate_random_alphanumeric_code(14)
+
+        try:
+            sql_ordine=("INSERT INTO ordine (codice_prodotto, quantità_ordinata,codice_spedizione) VALUES (%s, %s, %s)")
+            val_ordine = (prodotto[col_codice], quantità, codice_spedizione)
+            mycursor.execute(sql_ordine,val_ordine)
+            mydb.commit()
+            messaggio_notifica = "Spedizione  " + codice_spedizione + " da effettuare"
+            current_datetime = datetime.datetime.now()
+
+            try:
+                sql_notifica = ("INSERT INTO notifiche (messaggio, data_e_ora) VALUES (%s, %s)")
+                val_notifica = (messaggio_notifica, current_datetime)
+                mycursor.execute(sql_notifica, val_notifica)
+                mydb.commit()
+            except mysql.connector.Error:
+                messagebox.showerror("impossibile inviare notifica")
+        except mysql.connector.Error:
+            messagebox.showerror("Errore!!!")
+    except mysql.connector.Error:
+        messagebox.showerror("Errore")
+
+
+
+
+def generate_random_alphanumeric_code(length):
+    # Define the characters to choose from (alphanumeric)
+    characters = string.ascii_letters + string.digits
+
+    # Generate a random code of the specified length
+    random_code = ''.join(random.choice(characters) for _ in range(length))
+
+    return random_code
+
+
+def prodotto_scelto(prodotto):
+
+    col_nome = 0
+    col_codice = 1
+    col_quantità = 2
+    col_prezzo = 3
+
+    carrello= tk.Toplevel(master)
+    carrello.title("Carrello")
+    carrello.geometry("400x400")
+    carrello.configure(background="#008F8C")
+
+    n_prodotto = list(range(1, 20))
+
+    numero_prodotti = ttk.Label(carrello,text="Numero", font=("Helvetica", 12))
+    numero_prodotti.pack()
+    numero_combobox=ttk.Combobox(carrello,values=n_prodotto)
+    numero_combobox.pack()
+
+    price_label = tk.Label(carrello, text="Prezzo: " + str(prodotto[col_prezzo]), font=("Helvetica", 16))
+    price_label.pack()
+
+    btn_ordina=Button(carrello ,text="Ordina", command= lambda :ordina(prodotto, numero_combobox.get()), font=("Helvetica", 12))
+    btn_ordina.pack()
+
+
+def take(prodotti, in_nome):
+    for x in prodotti:
+        if x[0] == in_nome:
+            break
+
+    prodotto_scelto(x)
+
+def pagina_negozio():
+    messagebox.showinfo("Benvenuto", "Accesso confermato")
+
+    sql_select = ("SELECT * FROM prodotti")
+
+    col_nome = 0
+    col_codice = 1
+    col_quantità = 2
+    col_prezzo = 3
+
+    try:
+        mycursor.execute(sql_select)
+        prodotti = mycursor.fetchall()
+
+    except mysql.connector.Error:
+        messagebox.showerror("Errore", "Impossibile recuperare prodotti")
+
+    shop = tk.Toplevel(master)
+    shop.title("Negozio")
+    shop.geometry("100x100")
+    shop.configure(background="#008F8C")
+
+    # Combobox per il modello
+    model_label = ttk.Label(shop, text="Nome:", font=("Helvetica", 12))
+    model_label.pack()
+    model_combobox = ttk.Combobox(shop, values=[x[col_nome] for x in prodotti])
+    model_combobox.pack()
+
+    btn_combo= Button(shop,text="prosegui", command=lambda : take(prodotti,model_combobox.get()), font=("Helvetica", 12))
+
+    btn_combo.pack()
+def log(username_two,passw_two):
+    username = username_two.get()
+    passw = passw_two.get()
+
+    query = "SELECT * FROM users WHERE Nickname = %s AND Password =%s"
+    mycursor.execute(query, (username ,passw ))
+    result = mycursor.fetchone()
+
+    if result:
+        pagina_negozio()
+    else:
+        messagebox.showinfo("Errore","Nickname o password sbagliati")
+        return
+
+def aggiungi_prodotto(nome_prodotto,codice_prodotto,quantità_prodotto,prezzo_prodotto,):
+    sql_select = ("INSERT INTO prodotti (nome, codice, quantità, prezzo) VALUES (%s,%s,%s,%s) "
+                  "ON DUPLICATE KEY UPDATE quantità=%s, prezzo=%s ")
+    val_select = (nome_prodotto,codice_prodotto,int(quantità_prodotto), int(prezzo_prodotto), int(quantità_prodotto), int(prezzo_prodotto))
+    try:
+        mycursor.execute(sql_select,val_select)
+        mydb.commit()
+        messagebox.showinfo("Successo","Prodotto aggiunto correttamente")
+        #Creazione notifica
+        messaggio_notifica = "Prodotto con codice " + codice_prodotto + " aggiunto al catalogo"
+        current_datetime = datetime.datetime.now()
+
+        try:
+            sql_notifica = ("INSERT INTO notifiche (messaggio, data_e_ora) VALUES (%s, %s)")
+            val_notifica = (messaggio_notifica, current_datetime)
+            mycursor.execute(sql_notifica, val_notifica)
+            mydb.commit()
+        except mysql.connector.Error:
+            messagebox.showerror("impossibile inviare notifica")
+
+    except mysql.connector.Error:
+
+        messagebox.showerror("Errore","Impossibile aggiungere il prodotto")
+
+
+def rimuovi_prodotto(codice_prodotto):
+    sql_select = ("DELETE FROM prodotti where codice=%s")
+    val_select = (codice_prodotto,)
+
+    try:
+        mycursor.execute(sql_select, val_select)
+        mydb.commit()
+        messagebox.showinfo("Successo", "Prodotto rimosso correttamente")
+    except mysql.connector.Error:
+
+        messagebox.showerror("Errore", "Impossibile rimuovere il prodotto")
+
+
+def Users():
+    user = tk.Toplevel(master)
+    user.title("Area Utenti")
+    user.geometry("660x600")
+    user.configure(background="#008F8C")
+
+    name = Label(user, text="Login", font=("Helvetica", 16))
+    name.grid()
+
+    username = Entry(user)
+    passw = Entry(user, show="*", font=("Helvetica", 12))
+    username.grid()
+    passw.grid()
+
+    btn_reg = Button(user, text="Registrati", command=lambda :register(username,passw),font=("Helvetica", 12))
+    btn_reg.grid()
+    btn_log = Button(user, text="login", command=lambda :log(username,passw),font=("Helvetica", 12))
+    btn_log.grid()
+
+def amministration():
+    amministration= tk.Toplevel(master)   #Creazione di una nuova finestra
+    amministration.title("Area Amministrazione")
+    amministration.geometry("600x660")
+    amministration.configure(background="#008F8C")
+
+    lbl1 = Label(amministration, text="Login", font=("Helvetica", 16))
+    lbl1.grid(padx=275, pady=10)
+
+    Nickname = Entry(amministration)
+    password = Entry(amministration, show="*",font=("Helvetica", 12))  # Mostri asterischi per la password
+
+    Nickname.grid(row=1, column=0, padx=10, pady=10)
+    password.grid(row=2, column=0, padx=10, pady=10)
+
+
+    btn_login = Button(amministration, text="Login", command=lambda : login(Nickname,password),font=("Helvetica", 12))
+    btn_login.grid(row=3, column=0, padx=10, pady=10)
+
+
+
+def gestione_prodotti():
+    gestion = tk.Toplevel(master)
+    gestion.title("magazzino")
+    gestion.geometry("660x600")
+    gestion.configure(background="#008F8C")
+
+    lbl_nome=Label(text="Nome",font=("Helvetica", 12))
+    lbl_codice=Label(text="Codice", font=("Helvetica", 12))
+    lbl_quantità=Label(text="Quantità", font=("Helvetica", 12))
+    lbl_prezzo=Label(text="Prezzo", font=("Helvetica", 12))
+
+    nome_prodotto = Entry(gestion)
+    nome_prodotto.insert(0, "Nome")
+    nome_prodotto.pack()
+
+    codice_prodotto = Entry(gestion)
+    codice_prodotto.insert(0, "Codice")
+    codice_prodotto.pack()
+
+    quantità_prodotto = Entry(gestion)
+    quantità_prodotto.insert(0, "Quantità")
+    quantità_prodotto.pack()
+
+    prezzo_prodotto = Entry(gestion)
+    prezzo_prodotto.insert(0, "Prezzo")
+    prezzo_prodotto.pack()
+
+
+    btnAggiungi = Button(gestion, text="Aggiungi prodotto", command=lambda :aggiungi_prodotto(nome_prodotto.get(),codice_prodotto.get(),quantità_prodotto.get(),prezzo_prodotto.get()), font=("Helvetica", 12))
+    btnRimuovi = Button(gestion, text="Rimuovi prodotto", command=lambda :rimuovi_prodotto(codice_prodotto.get()),font=("Helvetica", 12))
+    btnAggiungi.pack()
+    btnRimuovi.pack()
+
+
+btn1 = Button(master, text="Area Utenti", command=Users,font=("Helvetica", 12))
+btn1.pack()
+
+btn_amm = Button(master, text="Amministrazione", command=amministration,font=("Helvetica", 12))
+btn_amm.pack()
+
+
+
+master.mainloop()
